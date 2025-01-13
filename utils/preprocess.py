@@ -20,8 +20,9 @@ def subgraph_construction(cfg):
 
     def call(graph):
 
-        subgraph_node_indices = torch.arange(graph.num_nodes**2) \
-            .view((graph.num_nodes, graph.num_nodes))
+        subgraph_node_indices = torch.arange(graph.num_nodes**2).view(
+            (graph.num_nodes, graph.num_nodes)
+        )
 
         sample = False
         if dropout_p > 0:
@@ -33,23 +34,26 @@ def subgraph_construction(cfg):
 
             sampled_subgraphs_idx = sample_indices(n=n, k=sample_size)
             unsampled_subgraphs_idx = exclude_indices_efficient(
-                sampled_subgraphs_idx, N=n)
+                sampled_subgraphs_idx, N=n
+            )
 
             sampled_nodes_idx = from_subgraph_indices_to_nodes_indices(
-                indices=sampled_subgraphs_idx, n=n)
-            unsampled_nodes_idx = exclude_indices_efficient(
-                sampled_nodes_idx, N=n**2)
+                indices=sampled_subgraphs_idx, n=n
+            )
+            unsampled_nodes_idx = exclude_indices_efficient(sampled_nodes_idx, N=n**2)
 
         num_subgraphs = graph.num_nodes
         adj_of_origianl_graph = pyg.utils.to_dense_adj(
-            graph.edge_index, max_num_nodes=graph.num_nodes).squeeze(0)
+            graph.edge_index, max_num_nodes=graph.num_nodes
+        ).squeeze(0)
 
         apsp = get_all_pairs_shortest_paths(adj=adj_of_origianl_graph)
         edge_index_of_original_graph = graph.edge_index
         edge_attr_original_graph = graph.edge_attr
 
         subgraphs_x = get_subgraph_node_features_multi(
-            original_graph_features=graph.x, subgraph_node_indices=subgraph_node_indices)
+            original_graph_features=graph.x, subgraph_node_indices=subgraph_node_indices
+        )
 
         # Warning: Assumes the value of 1001 accounts for 2 nodes which are unreachable from each other!
         # Replaces all 'inf' values with 1001
@@ -58,10 +62,8 @@ def subgraph_construction(cfg):
 
         if sample:
             num_subgraphs = len(sampled_subgraphs_idx)
-            subgraphs_x = select_rows(
-                matrix=subgraphs_x, indices=sampled_nodes_idx)
-            apsp = select_rows(matrix=apsp.reshape(-1, 1),
-                               indices=sampled_nodes_idx)
+            subgraphs_x = select_rows(matrix=subgraphs_x, indices=sampled_nodes_idx)
+            apsp = select_rows(matrix=apsp.reshape(-1, 1), indices=sampled_nodes_idx)
             apsp = apsp.flatten(end_dim=1)
             sampled_nodes_idx = torch.tensor(sampled_nodes_idx).reshape(-1, n)
             mapping = generate_index_mapping(sampled_nodes_idx)
@@ -74,7 +76,7 @@ def subgraph_construction(cfg):
             # node features
             "x": subgraphs_x,
             # node marking
-            "d": apsp
+            "d": apsp,
         }
 
         # edge indexes for each agg
@@ -98,9 +100,9 @@ def subgraph_construction(cfg):
             edge_index = get_edge_index_vv(subgraph_node_indices)
             if dropout_p > 0:
                 filtered_edge_index, mask_removed = remove_edges(
-                    edge_index, unsampled_nodes_idx)
-                filtered_edge_index = apply_index_mapping(
-                    filtered_edge_index, mapping)
+                    edge_index, unsampled_nodes_idx
+                )
+                filtered_edge_index = apply_index_mapping(filtered_edge_index, mapping)
                 data_dict["index_vv"] = filtered_edge_index
             else:
                 data_dict["index_vv"] = edge_index
@@ -108,8 +110,7 @@ def subgraph_construction(cfg):
         if cfg.model.sum_pooling:
             if dropout_p > 0:
                 filtered_edge_index = get_edge_index_uG(sampled_nodes_idx)
-                filtered_edge_index = apply_index_mapping(
-                    filtered_edge_index, mapping)
+                filtered_edge_index = apply_index_mapping(filtered_edge_index, mapping)
                 data_dict["index_uG"] = filtered_edge_index
             else:
                 edge_index = get_edge_index_uG(subgraph_node_indices)
@@ -132,65 +133,75 @@ def subgraph_construction(cfg):
                 filtered_edge_index = filtered_edge_index.type(torch.int64)
 
                 filtered_edge_index = get_Lu_edge_index_sampling(
-                    filtered_edge_index, sampled_subgraphs_idx, n)
-                filtered_edge_index = apply_index_mapping(
-                    filtered_edge_index, mapping)
+                    filtered_edge_index, sampled_subgraphs_idx, n
+                )
+                filtered_edge_index = apply_index_mapping(filtered_edge_index, mapping)
 
                 filtered_edge_attr = edge_attr_original_graph
                 if filtered_edge_attr is not None:
                     filtered_edge_attr = edge_attr_original_graph
 
                     filtered_edge_attr = get_Lu_edge_attr_sampling(
-                        filtered_edge_attr, sampled_subgraphs_idx)
-                data_dict.update({"index_uL": filtered_edge_index,
-                                  "attrs_uL": filtered_edge_attr})
+                        filtered_edge_attr, sampled_subgraphs_idx
+                    )
+                data_dict.update(
+                    {"index_uL": filtered_edge_index, "attrs_uL": filtered_edge_attr}
+                )
                 filtered_edge_index_uL = filtered_edge_index
                 filtered_edge_attr_uL = filtered_edge_attr
 
             else:
                 edge_index = get_edge_index_uL(
-                    subgraph_node_indices, edge_index_of_original_graph)
+                    subgraph_node_indices, edge_index_of_original_graph
+                )
                 if edge_attr_original_graph == None:
-                    data_dict.update({"index_uL": edge_index,
-                                      "attrs_uL": None})
+                    data_dict.update({"index_uL": edge_index, "attrs_uL": None})
                 else:
                     edge_attr = get_edge_attr_uL(
-                        subgraph_node_indices, edge_attr_original_graph)
-                    data_dict.update({"index_uL": edge_index,
-                                      "attrs_uL": edge_attr})
+                        subgraph_node_indices, edge_attr_original_graph
+                    )
+                    data_dict.update({"index_uL": edge_index, "attrs_uL": edge_attr})
         if vL:
             if dropout_p > 0:
                 filtered_edge_index, mask_removed = remove_edges(
-                    edge_index_of_original_graph, unsampled_subgraphs_idx)
-                filtered_edge_index = get_Lv_edge_index_sampling(
-                    filtered_edge_index, n)
-                filtered_edge_index = apply_index_mapping(
-                    filtered_edge_index, mapping)
+                    edge_index_of_original_graph, unsampled_subgraphs_idx
+                )
+                filtered_edge_index = get_Lv_edge_index_sampling(filtered_edge_index, n)
+                filtered_edge_index = apply_index_mapping(filtered_edge_index, mapping)
 
                 filtered_edge_attr = edge_attr_original_graph
                 if filtered_edge_attr is not None:
                     filtered_edge_attr = edge_attr_original_graph[~mask_removed]
                     filtered_edge_attr = get_Lv_edge_attr_sampling(
-                        filtered_edge_attr, n)
+                        filtered_edge_attr, n
+                    )
                 # Warning: if filtered_edge_index.numel() == 0 it uses uL again!
                 if filtered_edge_index.numel() == 0:
-                    data_dict.update({"index_vL": filtered_edge_index_uL,
-                                      "attrs_vL": filtered_edge_attr_uL})
+                    data_dict.update(
+                        {
+                            "index_vL": filtered_edge_index_uL,
+                            "attrs_vL": filtered_edge_attr_uL,
+                        }
+                    )
 
                 else:
-                    data_dict.update({"index_vL": filtered_edge_index,
-                                      "attrs_vL": filtered_edge_attr})
+                    data_dict.update(
+                        {
+                            "index_vL": filtered_edge_index,
+                            "attrs_vL": filtered_edge_attr,
+                        }
+                    )
             else:
                 edge_index = get_edge_index_vL(
-                    subgraph_node_indices, edge_index_of_original_graph)
+                    subgraph_node_indices, edge_index_of_original_graph
+                )
                 if edge_attr_original_graph == None:
-                    data_dict.update({"index_vL": edge_index,
-                                      "attrs_vL": None})
+                    data_dict.update({"index_vL": edge_index, "attrs_vL": None})
                 else:
                     edge_attr = get_edge_attr_vL(
-                        subgraph_node_indices, edge_attr_original_graph)
-                    data_dict.update({"index_vL": edge_index,
-                                      "attrs_vL": edge_attr})
+                        subgraph_node_indices, edge_attr_original_graph
+                    )
+                    data_dict.update({"index_vL": edge_index, "attrs_vL": edge_attr})
 
         # PE
         # Warning: k has to be <= 16!
@@ -200,13 +211,19 @@ def subgraph_construction(cfg):
             indices = sampled_nodes_idx.reshape(-1)
             indices = indices.clone().detach()
 
-            lap_cart = get_laplacian_pe_for_kron_graph(data=graph, norm_type='none',
-                                                       pos_enc_dim=num_eigen_vectors)
+            lap_cart = get_laplacian_pe_for_kron_graph(
+                data=graph, norm_type="none", pos_enc_dim=num_eigen_vectors
+            )
 
             data_dict.update({"subgraph_PE": lap_cart[indices]})
         else:
-            data_dict.update({"subgraph_PE": get_laplacian_pe_for_kron_graph(data=graph, norm_type='none',
-                                                                             pos_enc_dim=num_eigen_vectors)})
+            data_dict.update(
+                {
+                    "subgraph_PE": get_laplacian_pe_for_kron_graph(
+                        data=graph, norm_type="none", pos_enc_dim=num_eigen_vectors
+                    )
+                }
+            )
 
         return data.Data(**data_dict)
 
@@ -214,6 +231,7 @@ def subgraph_construction(cfg):
 
 
 # ---------------------- Pre-process - helpers ----------------------------- #
+
 
 def sample_indices(n, k):
     """
@@ -230,8 +248,9 @@ def sample_indices(n, k):
         raise ValueError("k cannot be greater than n.")
     indices = np.random.choice(n, k, replace=False).tolist()
     indices.sort()
-    assert len(
-        indices) == k, f"The number of indices should be {k}, but got {len(indices)}."
+    assert (
+        len(indices) == k
+    ), f"The number of indices should be {k}, but got {len(indices)}."
     return torch.tensor(indices)
 
 
@@ -260,16 +279,18 @@ def from_subgraph_indices_to_nodes_indices(indices, n):
     Returns:
     list: A concatenated list based on the provided indices and n.
     """
-    indices_array = np.array(
-        indices)[:, None]  # Convert indices to a 2D column array
+    indices_array = np.array(indices)[:, None]  # Convert indices to a 2D column array
     # Broadcasting to create the ranges
     ranges = indices_array * n + np.arange(n)
     return np.sort(ranges.ravel())  # Flatten and sort the array
 
 
 def get_all_pairs_shortest_paths(adj):
-    spd = torch.where(~torch.eye(len(adj), dtype=bool) & (adj == 0),
-                      torch.full_like(adj, float("inf")), adj)
+    spd = torch.where(
+        ~torch.eye(len(adj), dtype=bool) & (adj == 0),
+        torch.full_like(adj, float("inf")),
+        adj,
+    )
     # Floyd-Warshall
 
     for k in range(len(spd)):
@@ -341,8 +362,11 @@ def get_edge_index_uu(subgraph_node_indices):
     # uv <- uu
     target_nodes = subgraph_node_indices
     # broadcasts the diagonal left and right
-    _, src_nodes = torch.stack(torch.broadcast_tensors(
-        target_nodes, torch.diag(subgraph_node_indices)[:, None]))
+    _, src_nodes = torch.stack(
+        torch.broadcast_tensors(
+            target_nodes, torch.diag(subgraph_node_indices)[:, None]
+        )
+    )
     index_uu = torch.stack((target_nodes, src_nodes)).flatten(start_dim=1)
     return index_uu
 
@@ -351,8 +375,11 @@ def get_edge_index_vv(subgraph_node_indices):
     # uv <- vv
     target_nodes = subgraph_node_indices
     # broadcasts the diagonal up and down
-    _, src_nodes = torch.stack(torch.broadcast_tensors(
-        target_nodes, torch.diag(subgraph_node_indices)[None, :]))
+    _, src_nodes = torch.stack(
+        torch.broadcast_tensors(
+            target_nodes, torch.diag(subgraph_node_indices)[None, :]
+        )
+    )
     index_vv = torch.stack((target_nodes, src_nodes)).flatten(start_dim=1)
     return index_vv
 
@@ -361,15 +388,15 @@ def get_edge_index_uG(subgraph_node_indices):
     # uv <- uG
     # make each node ([:, :, None]) match all nodes of its subgraph ([:, None, :])
     target_nodes, src_nodes = torch.broadcast_tensors(
-        subgraph_node_indices[:, :, None], subgraph_node_indices[:, None, :])
+        subgraph_node_indices[:, :, None], subgraph_node_indices[:, None, :]
+    )
     index_uG = torch.stack((target_nodes, src_nodes)).flatten(start_dim=1)
     return index_uG
 
 
 def get_edge_index_uG_efficient_pooling(num_subgraphs):
     src_nodes = torch.arange(num_subgraphs**2)
-    target_nodes = torch.repeat_interleave(
-        torch.arange(num_subgraphs), num_subgraphs)
+    target_nodes = torch.repeat_interleave(torch.arange(num_subgraphs), num_subgraphs)
     index_uG_pool = torch.stack((target_nodes, src_nodes)).flatten(start_dim=1)
     return index_uG_pool
 
@@ -377,7 +404,8 @@ def get_edge_index_uG_efficient_pooling(num_subgraphs):
 def get_edge_index_vG(subgraph_node_indices):
     # uv <- vG
     target_nodes, src_nodes = torch.broadcast_tensors(
-        subgraph_node_indices[None, :, :], subgraph_node_indices[:, None, :])
+        subgraph_node_indices[None, :, :], subgraph_node_indices[:, None, :]
+    )
     index_vG = torch.stack((target_nodes, src_nodes)).flatten(start_dim=1)
 
     return index_vG
@@ -411,14 +439,12 @@ def get_edge_index_uL(subgraph_node_indices, edge_index_of_original_graph):
 
     # Combine the adjusted node indices and the edge indices of the original graph
     # 2 X num_edges X num_nodes_per_subgraph
-    combined_indices = adjusted_node_indices + \
-        edge_index_of_original_graph[:, :, None]
+    combined_indices = adjusted_node_indices + edge_index_of_original_graph[:, :, None]
 
     # Flatten the tensor to get the final edge index
     index_uL = combined_indices.flatten(start_dim=1)
 
     return index_uL
-
 
 
 def get_edge_index_vL(subgraph_node_indices, edge_index_of_original_graph):
@@ -437,13 +463,13 @@ def get_edge_index_vL(subgraph_node_indices, edge_index_of_original_graph):
     num_nodes_per_subgraph = len(subgraph_node_indices)
 
     # Adjust the edge indices based on the subgraph's node indices
-    adjusted_edge_index = edge_index_of_original_graph[:,
-                                                       :, None] * num_nodes_per_subgraph
+    adjusted_edge_index = (
+        edge_index_of_original_graph[:, :, None] * num_nodes_per_subgraph
+    )
 
     # Add the subgraph node indices
     # 2 X num_edges X num_nodes_per_subgraph
-    indexed_subgraph = subgraph_node_indices[None,
-                                             None, 0, :] + adjusted_edge_index
+    indexed_subgraph = subgraph_node_indices[None, None, 0, :] + adjusted_edge_index
 
     # Flatten the tensor to get the final edge index
     index_vL = indexed_subgraph.flatten(start_dim=1)
@@ -451,21 +477,22 @@ def get_edge_index_vL(subgraph_node_indices, edge_index_of_original_graph):
     return index_vL
 
 
-
 def get_edge_attr_uL(subgraph_node_indices, edge_attr_of_original_graph):
     # num_features X num_edges X num_nodes_per_subgraph
     edge_attr_of_original_graph_2d = prepare_edge_attributes_for_subgraph_processing(
-        edge_attr_of_original_graph=edge_attr_of_original_graph, subgraph_node_indices=subgraph_node_indices)
+        edge_attr_of_original_graph=edge_attr_of_original_graph,
+        subgraph_node_indices=subgraph_node_indices,
+    )
     return edge_attr_of_original_graph_2d.T
-
 
 
 def get_edge_attr_vL(subgraph_node_indices, edge_attr_of_original_graph):
     return get_edge_attr_uL(subgraph_node_indices, edge_attr_of_original_graph)
 
 
-
-def prepare_edge_attributes_for_subgraph_processing(edge_attr_of_original_graph, subgraph_node_indices):
+def prepare_edge_attributes_for_subgraph_processing(
+    edge_attr_of_original_graph, subgraph_node_indices
+):
     """
     Prepares the edge attributes of the original graph for subgraph processing.
 
@@ -495,7 +522,6 @@ def prepare_edge_attributes_for_subgraph_processing(edge_attr_of_original_graph,
     # num_features X num_edges X num_nodes_per_subgraph
     # should flatten dimenstion with: num_edges x num_subgraphs
     flattened_tensor = permuted_tensor.flatten(start_dim=1)
-
 
     return flattened_tensor
 
@@ -543,7 +569,9 @@ def apply_index_mapping(tensor, index_map):
     return mapped_tensor
 
 
-def get_Lu_edge_index_sampling(filtered_edge_index, subgraph_sampled_indices, num_nodes):
+def get_Lu_edge_index_sampling(
+    filtered_edge_index, subgraph_sampled_indices, num_nodes
+):
     """
     Create a new edge index by concatenating the original edge_index with itself,
     each time offset by elements of subgraph_sampled_indices, in the specified order.
@@ -559,8 +587,9 @@ def get_Lu_edge_index_sampling(filtered_edge_index, subgraph_sampled_indices, nu
 
     # Expand and repeat the edge_index and subgraph_sampled_indices
     expanded_edge_index = filtered_edge_index.repeat(1, num_indices)
-    expanded_indices = subgraph_sampled_indices.repeat_interleave(
-        num_edges).view(1, -1).repeat(2, 1)
+    expanded_indices = (
+        subgraph_sampled_indices.repeat_interleave(num_edges).view(1, -1).repeat(2, 1)
+    )
 
     # Add the expanded indices to the expanded edge index
     final_edge_index = expanded_edge_index + (expanded_indices * num_nodes)
@@ -573,11 +602,11 @@ def get_Lu_edge_index_sampling(filtered_edge_index, subgraph_sampled_indices, nu
 
 def get_Lu_edge_attr_sampling(filtered_edge_attr, subgraph_sampled_indices):
     """
-        Concatenate the matrix A with itself K times row-wise.
+    Concatenate the matrix A with itself K times row-wise.
 
-        :param filtered_edge_attr: A torch tensor of shape (N, D).
-        :param subgraph_sampled_indices: The number of times to repeat A row-wise.
-        :return: A new torch tensor of shape (N*subgraph_sampled_indices, D).
+    :param filtered_edge_attr: A torch tensor of shape (N, D).
+    :param subgraph_sampled_indices: The number of times to repeat A row-wise.
+    :return: A new torch tensor of shape (N*subgraph_sampled_indices, D).
     """
     if filtered_edge_attr is None:
         return filtered_edge_attr
@@ -594,7 +623,7 @@ def get_Lv_edge_index_sampling(filtered_edge_index, num_nodes):
     """
     Create a new edge index by expanding each edge in the edge_index.
     For each edge (a, b), create 'num_nodes' edges:
-    (a*num_nodes, b*num_nodes), (a*num_nodes+1, b*num_nodes+1), ..., 
+    (a*num_nodes, b*num_nodes), (a*num_nodes+1, b*num_nodes+1), ...,
     (a*num_nodes+num_nodes-1, b*num_nodes+num_nodes-1).
 
     :param filtered_edge_index: A 2D torch tensor representing the edges of a graph.
@@ -605,10 +634,12 @@ def get_Lv_edge_index_sampling(filtered_edge_index, num_nodes):
     offsets = torch.arange(0, num_nodes).to(filtered_edge_index.device)
 
     # Expand edge_index and add offsets
-    a_expanded = (filtered_edge_index[0].unsqueeze(1).repeat(
-        1, num_nodes) * num_nodes + offsets).view(-1)
-    b_expanded = (filtered_edge_index[1].unsqueeze(1).repeat(
-        1, num_nodes) * num_nodes + offsets).view(-1)
+    a_expanded = (
+        filtered_edge_index[0].unsqueeze(1).repeat(1, num_nodes) * num_nodes + offsets
+    ).view(-1)
+    b_expanded = (
+        filtered_edge_index[1].unsqueeze(1).repeat(1, num_nodes) * num_nodes + offsets
+    ).view(-1)
 
     # Combine into new edge index
     final_edge_index = torch.stack([a_expanded, b_expanded], dim=0)
@@ -633,35 +664,41 @@ def get_Lv_edge_attr_sampling(filtered_edge_attr, num_nodes):
     N, D = filtered_edge_attr.shape
 
     # Repeat each row of filtered_edge_attr K times
-    repeated_filtered_edge_attr = filtered_edge_attr.unsqueeze(
-        1).repeat(1, K, 1).view(N*K, D)
+    repeated_filtered_edge_attr = (
+        filtered_edge_attr.unsqueeze(1).repeat(1, K, 1).view(N * K, D)
+    )
 
     return repeated_filtered_edge_attr
 
 
-def get_laplacian_pe_for_kron_graph(data, norm_type='none', pos_enc_dim=8):
+def get_laplacian_pe_for_kron_graph(data, norm_type="none", pos_enc_dim=8):
     L = get_laplacian(data, norm_type)
     EigVal, EigVec = np.linalg.eig(L)
     EigVec = sign_fliper(EigVec)
     idx = EigVal.argsort()  # increasing order
 
     EigVal, EigVec = EigVal[idx], np.real(EigVec[:, idx])
-    EigVec_top_k = EigVec[:, 1:pos_enc_dim+1]
-    EigVal_top_k = EigVal[1:pos_enc_dim+1]
-    if EigVec_top_k[:, :int((pos_enc_dim+1)**0.5)].size == 0:
+    EigVec_top_k = EigVec[:, 1 : pos_enc_dim + 1]
+    EigVal_top_k = EigVal[1 : pos_enc_dim + 1]
+    if EigVec_top_k[:, : int((pos_enc_dim + 1) ** 0.5)].size == 0:
         EigVec_top_k = np.zeros((data.num_nodes, pos_enc_dim))
 
-    EigVec_top_k_cartesian = np.kron(EigVec_top_k[:, :int(
-        (pos_enc_dim+1)**0.5)], EigVec_top_k[:, :int((pos_enc_dim+1)**0.5)])
+    EigVec_top_k_cartesian = np.kron(
+        EigVec_top_k[:, : int((pos_enc_dim + 1) ** 0.5)],
+        EigVec_top_k[:, : int((pos_enc_dim + 1) ** 0.5)],
+    )
 
-    EigVal_top_k_cartesian = EigVal_top_k[:int((pos_enc_dim+1)**0.5)]
-    EigVal_top_k_cartesian = EigVal_top_k_cartesian.reshape(
-        -1, 1) + EigVal_top_k_cartesian
+    EigVal_top_k_cartesian = EigVal_top_k[: int((pos_enc_dim + 1) ** 0.5)]
+    EigVal_top_k_cartesian = (
+        EigVal_top_k_cartesian.reshape(-1, 1) + EigVal_top_k_cartesian
+    )
     EigVal_top_k_cartesian = EigVal_top_k_cartesian.reshape(-1)
 
     idx = EigVal_top_k_cartesian.argsort()
-    EigVal_top_k_cartesian, EigVec_top_k_cartesian = EigVal_top_k_cartesian[idx][:pos_enc_dim], np.real(
-        EigVec_top_k_cartesian[:, idx])[:, :pos_enc_dim]
+    EigVal_top_k_cartesian, EigVec_top_k_cartesian = (
+        EigVal_top_k_cartesian[idx][:pos_enc_dim],
+        np.real(EigVec_top_k_cartesian[:, idx])[:, :pos_enc_dim],
+    )
     PE = torch.from_numpy(EigVec_top_k_cartesian).float()
     PE = pad_pe(pe_matrix=PE, D=pos_enc_dim)
 
@@ -673,13 +710,13 @@ def get_laplacian_pe_for_kron_graph(data, norm_type='none', pos_enc_dim=8):
     return PE
 
 
-def get_laplacian(data, norm_type='none'):
+def get_laplacian(data, norm_type="none"):
     """
     This function calculates the Laplacian of a given graph data.
 
     Parameters:
     data (torch_geometric.data.Data): Input graph data.
-    norm_type (str, optional): Type of normalization. 
+    norm_type (str, optional): Type of normalization.
         It can be 'none' (stands for L = D - A), 'symmetric', or 'random_walk'. Default is 'none'.
 
     Returns:
@@ -695,30 +732,30 @@ def get_laplacian(data, norm_type='none'):
     # Degree matrix
     deg = pyg.utils.degree(edge_index[0], num_nodes, dtype=torch.float)
 
-    if norm_type == 'none':
+    if norm_type == "none":
         # No normalization Laplacian: L = D - A
         L = torch.diag(deg) - adj
-    elif norm_type == 'symmetric':
+    elif norm_type == "symmetric":
         # Symmetric normalization Laplacian: L = I - D^-0.5 * A * D^-0.5
         D_sqrt_inv = deg.pow(-0.5)
         D_sqrt_inv[deg == 0] = 0
-        L = torch.eye(num_nodes) - D_sqrt_inv.view(-1, 1) * \
-            adj * D_sqrt_inv.view(1, -1)
-    elif norm_type == 'random_walk':
+        L = torch.eye(num_nodes) - D_sqrt_inv.view(-1, 1) * adj * D_sqrt_inv.view(1, -1)
+    elif norm_type == "random_walk":
         # Random walk normalization Laplacian: L = I - D^-1 * A
         D_inv = deg.reciprocal()
         D_inv[deg == 0] = 0
         L = torch.eye(num_nodes) - D_inv.view(-1, 1) * adj
     else:
         raise ValueError(
-            'norm_type must be either "none", "symmetric" or "random_walk"')
+            'norm_type must be either "none", "symmetric" or "random_walk"'
+        )
 
     return L
 
 
 def sign_fliper(tensor):
     N, K = tensor.shape
-    sign_tensor = (np.random.randint(0, 2, (1, N)) * 2 - 1)
+    sign_tensor = np.random.randint(0, 2, (1, N)) * 2 - 1
     flipped_tensor = tensor * sign_tensor
     return flipped_tensor
 
@@ -735,7 +772,7 @@ def pad_pe(pe_matrix, D):
         return pe_matrix
 
     # Create an array of zeros to pad each row
-    padding = torch.zeros((N, D-K))
+    padding = torch.zeros((N, D - K))
 
     # Concatenate the original matrix with the padding
     padded_matrix = torch.hstack((pe_matrix, padding))

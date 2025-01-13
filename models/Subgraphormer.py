@@ -41,12 +41,20 @@ class Subgraphormer(nn.Module):
         self.dataset = cfg.data.name
 
         logging.info("Checking dimentions.")
-        self.post_concat_dim_embed, self.each_agg_dim_embed = Subgraphormer.compute_final_embedding_dimension(
-            dim_embed=cfg.model.dim_embed, num_aggs=len(self.aggs), H=self.H)
+        self.post_concat_dim_embed, self.each_agg_dim_embed = (
+            Subgraphormer.compute_final_embedding_dimension(
+                dim_embed=cfg.model.dim_embed, num_aggs=len(self.aggs), H=self.H
+            )
+        )
 
         logging.info("Initializing Atom encoder + NM + PE layer.")
         self.atom_encoder, self.PE_layer = self.get_preprocess_layer(
-            dim=self.post_concat_dim_embed, max_dis=self.max_dis, use_linear=self.use_linear_atom_encoder, atom_dim=self.atom_dim, num_eigen_vectors=self.num_eigen_vectors)
+            dim=self.post_concat_dim_embed,
+            max_dis=self.max_dis,
+            use_linear=self.use_linear_atom_encoder,
+            atom_dim=self.atom_dim,
+            num_eigen_vectors=self.num_eigen_vectors,
+        )
 
         logging.info(f"Initializing all {self.num_layers} layers")
         # MPNN (local/global)
@@ -76,20 +84,32 @@ class Subgraphormer(nn.Module):
                     eps_i = self.init_eps()
                     EPS_i[agg] = eps_i
                     point_encoder_i = self.init_point_encoder(
-                        use_linear=self.use_linear, in_dim=self.post_concat_dim_embed, out_dim=self.each_agg_dim_embed)
+                        use_linear=self.use_linear,
+                        in_dim=self.post_concat_dim_embed,
+                        out_dim=self.each_agg_dim_embed,
+                    )
                     POINT_ENCODER_i[agg] = point_encoder_i
                 else:  # MPNN (local/global)
                     if self.use_edge_encoder(agg=agg):
                         edge_out_dim = self.get_edge_encoder_out_dim(
-                            layer_idx=layer_idx)
+                            layer_idx=layer_idx
+                        )
                         edge_encoder_i = self.init_edge_encoder(
-                            use_linear=self.use_linear_edge_encoder, in_dim=self.edge_attr_dim, out_dim=edge_out_dim)
+                            use_linear=self.use_linear_edge_encoder,
+                            in_dim=self.edge_attr_dim,
+                            out_dim=edge_out_dim,
+                        )
                         EDGE_ENCODER_i[agg] = edge_encoder_i
                     else:
                         edge_out_dim = None
                         EDGE_ENCODER_i[agg] = None
-                    mpnn_i = self.init_mpnn(in_dim=self.post_concat_dim_embed, out_dim=self.each_agg_dim_embed,
-                                            H=self.H, edge_in_dim=edge_out_dim, type=self.attention_type)
+                    mpnn_i = self.init_mpnn(
+                        in_dim=self.post_concat_dim_embed,
+                        out_dim=self.each_agg_dim_embed,
+                        H=self.H,
+                        edge_in_dim=edge_out_dim,
+                        type=self.attention_type,
+                    )
                     MPNN_i[agg] = mpnn_i
             # MPNN (local/global)
             self.MPNNs.append(nn.ModuleDict(MPNN_i))
@@ -99,15 +119,17 @@ class Subgraphormer(nn.Module):
             self.POINT_ENCODERs.append(nn.ModuleDict(POINT_ENCODER_i))
             # LAYER AGG (point || local || global)
             cat_encoder_i = self.get_cat_encoder(
-                use_linear=self.use_linear, in_dim=self.post_concat_dim_embed, out_dim=self.post_concat_dim_embed)
+                use_linear=self.use_linear,
+                in_dim=self.post_concat_dim_embed,
+                out_dim=self.post_concat_dim_embed,
+            )
             self.CAT_ENCODERs.append(cat_encoder_i)
             self.BNORM_RELUs.append(layers.NormReLU(self.post_concat_dim_embed))
             if self.dropout > 0:
                 self.DROP_OUTs.append(nn.Dropout(p=self.dropout))
 
         logging.info(f"Initializing pooling")
-        self.POOLING = layers.Pooling(
-            self.post_concat_dim_embed, self.final_dim)
+        self.POOLING = layers.Pooling(self.post_concat_dim_embed, self.final_dim)
 
     def forward(self, batch):
         # ATOM ENCODER + NM
@@ -123,17 +145,26 @@ class Subgraphormer(nn.Module):
                 # GIN
                 if self.is_point_agg(agg=agg):
                     agg_element = self.gin_encoder(
-                        batch=batch, eps=self.EPSs[layer_idx][agg], agg=agg, encoder=self.POINT_ENCODERs[layer_idx][agg])
+                        batch=batch,
+                        eps=self.EPSs[layer_idx][agg],
+                        agg=agg,
+                        encoder=self.POINT_ENCODERs[layer_idx][agg],
+                    )
                 # MPNN
                 else:
                     agg_element = self.agg_encoder(
-                        batch=batch, agg=agg, edge_encoder=self.EDGE_ENCODER[layer_idx][agg], mpnn=self.MPNNs[layer_idx][agg])
+                        batch=batch,
+                        agg=agg,
+                        edge_encoder=self.EDGE_ENCODER[layer_idx][agg],
+                        mpnn=self.MPNNs[layer_idx][agg],
+                    )
                 all_aggs.append(agg_element)
             # CAT ALL AGGS
             all_aggs_cat = torch.cat(all_aggs, dim=1)
             # BN_RELU + MLP
             batch_x = self.BNORM_RELUs[layer_idx](
-                self.CAT_ENCODERs[layer_idx](all_aggs_cat))
+                self.CAT_ENCODERs[layer_idx](all_aggs_cat)
+            )
             # DROPOUT
             if self.dropout > 0:
                 batch_x = self.DROP_OUTs[layer_idx](batch_x)
@@ -144,7 +175,8 @@ class Subgraphormer(nn.Module):
                 batch.x = batch_x
         # POOL
         pool_value = self.pooling_forward(
-            batch=batch, use_sum_pooling=self.use_sum_pooling)
+            batch=batch, use_sum_pooling=self.use_sum_pooling
+        )
         return pool_value
 
     # ============================= forward - helpers ============================= #
@@ -155,9 +187,11 @@ class Subgraphormer(nn.Module):
             return global_pool
         else:
             subgraph_rep = self.aggregate(
-                graph=batch, agg="uG", encode=None, pool_efficiently=True)
+                graph=batch, agg="uG", encode=None, pool_efficiently=True
+            )
             global_pool_efficient = self.POOLING(
-                batch=batch, subgraph_rep=subgraph_rep, efficient=True)
+                batch=batch, subgraph_rep=subgraph_rep, efficient=True
+            )
             return global_pool_efficient
 
     def get_edge_attr(self, agg, batch, edge_encoder):
@@ -168,7 +202,8 @@ class Subgraphormer(nn.Module):
             edge_attr = batch.get(f"attrs_{agg}", None)
             if edge_attr != None:
                 edge_attr = edge_encoder(
-                    message=-1, attrs=edge_attr, dont_use_message=True)
+                    message=-1, attrs=edge_attr, dont_use_message=True
+                )
         else:  # global
             edge_attr = None
         return edge_attr
@@ -197,20 +232,25 @@ class Subgraphormer(nn.Module):
 
     def agg_encoder(self, batch, agg, edge_encoder, mpnn):
         encoded_edge_atr = self.get_edge_attr(
-            agg=agg, batch=batch, edge_encoder=edge_encoder)
+            agg=agg, batch=batch, edge_encoder=edge_encoder
+        )
         agg_final_element = self.mpnn_encoder(
-            mpnn=mpnn, x=batch.x, edge_index=batch[f"index_{agg}"], edge_attr=encoded_edge_atr)
+            mpnn=mpnn,
+            x=batch.x,
+            edge_index=batch[f"index_{agg}"],
+            edge_attr=encoded_edge_atr,
+        )
         return agg_final_element
 
     # ============================= init - helpers ============================= #
     def init_mpnn(self, in_dim, out_dim, edge_in_dim, H, type):
         mpnn = layers.Attention_block(
-            d=in_dim, H=H, d_output=out_dim, edge_dim=edge_in_dim, type=type)
+            d=in_dim, H=H, d_output=out_dim, edge_dim=edge_in_dim, type=type
+        )
         return mpnn
 
     def init_edge_encoder(self, use_linear, in_dim, out_dim):
-        edge_encoder = layers.Bond(
-            dim=out_dim, linear=use_linear, linear_in_dim=in_dim)
+        edge_encoder = layers.Bond(dim=out_dim, linear=use_linear, linear_in_dim=in_dim)
         return edge_encoder
 
     def init_eps(self):
@@ -248,19 +288,27 @@ class Subgraphormer(nn.Module):
 
     # ============================= general - helpers ============================= #
 
-    def get_preprocess_layer(self, dim, num_eigen_vectors, max_dis, use_linear, atom_dim):
+    def get_preprocess_layer(
+        self, dim, num_eigen_vectors, max_dis, use_linear, atom_dim
+    ):
         use_PE = False
         nm_dim = dim
         if "_PE" in self.model_name:
             logging.info("Using PE\n")
             use_PE = True
             nm_dim = dim - num_eigen_vectors
-            assert nm_dim >= 0, "nm_dim shoould alway be greater than 0! decrease num_eigen_vectors in the PE layer"
+            assert (
+                nm_dim >= 0
+            ), "nm_dim shoould alway be greater than 0! decrease num_eigen_vectors in the PE layer"
         else:
-            logging.info(
-                "Not using PE -- ignoring the parameter: num_eigen_vectors\n")
+            logging.info("Not using PE -- ignoring the parameter: num_eigen_vectors\n")
         self.atom_encoder = layers.Atom(
-            dim=nm_dim, max_dis=max_dis, encode=True, use_linear=use_linear, atom_dim=atom_dim)
+            dim=nm_dim,
+            max_dis=max_dis,
+            encode=True,
+            use_linear=use_linear,
+            atom_dim=atom_dim,
+        )
         if use_PE:
             self.PE_layer = layers.PE_layer(num_eigen_vectors=num_eigen_vectors)
         else:
@@ -275,12 +323,15 @@ class Subgraphormer(nn.Module):
         post_concat_dim_embed = each_agg_dim_embed * num_aggs
         if dim_embed != post_concat_dim_embed:
             logging.info(
-                "Modified the embedding dim to fit the concatenation and the heads!\n")
+                "Modified the embedding dim to fit the concatenation and the heads!\n"
+            )
 
             logging.info(
-                f"Original embedding final dimension of layers concatenated: {dim_embed}")
+                f"Original embedding final dimension of layers concatenated: {dim_embed}"
+            )
             logging.info(
-                f"Modified embedding final dimension of layers concatenated: {post_concat_dim_embed}")
+                f"Modified embedding final dimension of layers concatenated: {post_concat_dim_embed}"
+            )
             logging.info(f"Each agg embedding size: {each_agg_dim_embed}")
             logging.info(f"Number of aggs: {num_aggs}")
 
@@ -290,28 +341,32 @@ class Subgraphormer(nn.Module):
             #     f"Asserting that \n   1)  {H=} * {each_head_dim=} = {each_agg_dim_embed=}  \nand\n   2)  {each_agg_dim_embed=} * {num_aggs=} = {post_concat_dim_embed=}"
             # )
 
-            assert H * each_head_dim == each_agg_dim_embed, (
-                f"Dimension mismatch: Expected {H * each_head_dim} but got {each_agg_dim_embed}"
-            )
+            assert (
+                H * each_head_dim == each_agg_dim_embed
+            ), f"Dimension mismatch: Expected {H * each_head_dim} but got {each_agg_dim_embed}"
 
-            assert each_agg_dim_embed * num_aggs == post_concat_dim_embed, (
-                f"Dimension mismatch: Expected {each_agg_dim_embed * num_aggs} but got {post_concat_dim_embed}"
-            )
+            assert (
+                each_agg_dim_embed * num_aggs == post_concat_dim_embed
+            ), f"Dimension mismatch: Expected {each_agg_dim_embed * num_aggs} but got {post_concat_dim_embed}"
         return post_concat_dim_embed, each_agg_dim_embed
 
 
-def get_model_params(model, dim_embed, AtomEncoder=AtomEncoder, BondEncoder=BondEncoder):
+def get_model_params(
+    model, dim_embed, AtomEncoder=AtomEncoder, BondEncoder=BondEncoder
+):
 
     try:
         total_params = sum(param.numel() for param in model.parameters())
         unused_atom_embed_params = sum(
             sum(param.numel() for param in m.parameters()) - 30 * dim_embed
-            for m in model.modules() if isinstance(m, AtomEncoder)
+            for m in model.modules()
+            if isinstance(m, AtomEncoder)
         )
 
         unused_bond_embed_params = sum(
             sum(param.numel() for param in m.parameters()) - 5 * dim_embed
-            for m in model.modules() if isinstance(m, BondEncoder)
+            for m in model.modules()
+            if isinstance(m, BondEncoder)
         )
 
         unused_params = unused_atom_embed_params + unused_bond_embed_params
@@ -319,6 +374,7 @@ def get_model_params(model, dim_embed, AtomEncoder=AtomEncoder, BondEncoder=Bond
 
     except Exception as e:
         print(
-            f"An error occurred when caculating the model size: {e}!\n Skipping this part.")
+            f"An error occurred when caculating the model size: {e}!\n Skipping this part."
+        )
         print(f"\n")
         return -1, -1, -1
