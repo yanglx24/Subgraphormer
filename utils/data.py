@@ -8,6 +8,7 @@ import shutil
 from ogb.utils.torch_util import replace_numpy_with_torchtensor
 from ogb.utils.url import decide_download
 from torch_geometric.data import InMemoryDataset, download_url
+from torch_geometric.datasets import GNNBenchmarkDataset
 import pandas as pd
 import hashlib
 import os.path as osp
@@ -73,6 +74,10 @@ def get_dataloader(cfg, sample_idx=0):
         dataloader, num_elements_in_target = get_peptides_struct_dataloader(
             cfg=cfg, transform_suffix=transform_suffix, transforms=transforms
         )
+    elif cfg.data.name in ["MNIST", "CIFAR10", "PATTERN", "CLUSTER"]:
+         dataloader, num_elements_in_target = get_gnnbenchmark_dataloader(
+            cfg=cfg, dataset_name=cfg.data.name, transform_suffix=transform_suffix, transforms=transforms
+        )
     else:
         raise ValueError(f"No dataset available for: {cfg.data.name}")
     assert (
@@ -122,6 +127,33 @@ def get_zincfull_dataloader(cfg, transform_suffix, transforms):
     num_elements_in_target = 1
     return dataloader, num_elements_in_target
 
+def get_gnnbenchmark_dataloader(cfg, dataset_name, transform_suffix, transforms):
+    if dataset_name not in ["MNIST", "CIFAR10", "PATTERN", "CLUSTER"]:
+        raise ValueError(f"Unsupported dataset: {dataset_name}. Must be one of 'MNIST', 'CIFAR10', 'PATTERN', 'CLUSTER'.")
+
+    if dataset_name in ["MNIST", "CIFAR10"]:
+        num_elements_in_target = 10
+    elif dataset_name == "PATTERN":
+        num_elements_in_target = 2
+    elif dataset_name == "CLUSTER":
+        num_elements_in_target = 6
+
+    dataloader = {
+        name: data.DataLoader(
+            GNNBenchmarkDataset(
+                root=cfg.data.dir + transform_suffix,
+                name=dataset_name,
+                split=name,
+                transform=transforms,
+            ),
+            batch_size=cfg.data.bs,
+            num_workers=cfg.data.num_workers,
+            shuffle=(name == "train"),
+        )
+        for name in ["train", "val", "test"]
+    }
+
+    return dataloader, num_elements_in_target
 
 def get_ogb_dataloader(cfg, transform_suffix, transforms):
     dataset = PygGraphPropPredDataset(

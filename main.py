@@ -31,7 +31,7 @@ cfg.data.dir = "./datasets/" + cfg.data.name
 # ===================================================================================================================== #
 logging.info(f"Setting device and seed.")
 
-device = torch.device(f"cuda:{cfg.general.device}")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(cfg.general.seed)
 # ===================================================================================================================== #
 # ========================================               load wandb             ======================================= #

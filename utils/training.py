@@ -25,6 +25,10 @@ def get_loss_func(cfg):
         "alchemy": (nn.L1Loss(), "minimize", "regression"),
         "Peptides-func": (nn.BCEWithLogitsLoss(), "maximize", "classification"),
         "Peptides-struc": (nn.L1Loss(), "minimize", "regression"),
+        "MNIST": (nn.CrossEntropyLoss(), "maximize", "classification"),
+        "CIFAR10": (nn.CrossEntropyLoss(), "maximize", "classification"),
+        "PATTERN": (nn.BCEWithLogitsLoss(), "maximize", "classification"),
+        "CLUSTER": (nn.CrossEntropyLoss(), "maximize", "classification"),
     }
 
     if dataset_name not in dataset_info:
@@ -76,6 +80,30 @@ def get_optim_func(cfg, model):
             weight_decay=weight_decay,
         ),
         "Peptides-struc": torch.optim.AdamW(
+            model.parameters(),
+            lr=lr,
+            betas=(0.9, 0.999),
+            eps=1e-8,
+            weight_decay=weight_decay,
+        ),
+        "MNIST": torch.optim.AdamW(
+            model.parameters(),
+            lr=lr,
+            betas=(0.9, 0.999),
+            eps=1e-8,
+            weight_decay=weight_decay,
+        ),
+        "CIFAR10": torch.optim.AdamW(
+            model.parameters(),
+            lr=lr,
+            betas=(0.9, 0.999),
+            eps=1e-8,
+            weight_decay=weight_decay,
+        ),
+        "PATTERN": torch.optim.Adam(
+            model.parameters(), lr=lr, weight_decay=weight_decay
+        ),
+        "CLUSTER": torch.optim.AdamW(
             model.parameters(),
             lr=lr,
             betas=(0.9, 0.999),
@@ -177,6 +205,18 @@ def get_sched_func(cfg, optim, warmup_epochs=10):
         ),
         "Peptides-func": scheduler_peptides,
         "Peptides-struc": scheduler_peptides,
+        "MNIST": torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optim, mode="min", factor=0.5, patience=cfg.training.patience, verbose=True
+        ),
+        "CIFAR10": torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optim, mode="min", factor=0.5, patience=cfg.training.patience, verbose=True
+        ),
+        "PATTERN": torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optim, mode="min", factor=0.5, patience=cfg.training.patience, verbose=True
+        ),
+        "CLUSTER": torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optim, mode="min", factor=0.5, patience=cfg.training.patience, verbose=True
+        ),
     }
 
     if dataset_name not in sched:
@@ -227,6 +267,10 @@ def get_evaluator(cfg):
         "alchemy": ZincLEvaluator(),
         "Peptides-func": AP_eveluator(),
         "Peptides-struc": ZincLEvaluator(),
+        "MNIST": AccEvaluator(),
+        "CIFAR10": AccEvaluator(),
+        "PATTERN": AccEvaluator(),
+        "CLUSTER": AccEvaluator(),
     }
 
     if dataset_name not in evaluators:
@@ -277,6 +321,19 @@ class ZincLEvaluator(nn.L1Loss):
         return L1_val_dict
 
 
+class AccEvaluator:
+    def eval(self, input_dict):
+        y_true, y_pred = input_dict["y_true"], input_dict["y_pred"]
+        acc_list = []
+
+        for i in range(y_true.shape[1]):
+            is_labeled = y_true[:, i] == y_true[:, i]
+            correct = y_true[is_labeled, i] == y_pred[is_labeled, i]
+            acc_list.append(float(np.sum(correct)) / len(correct))
+
+        return {"Acc": sum(acc_list) / len(acc_list)}
+
+
 # --------------------------------- training -------------------------------- #
 
 
@@ -315,7 +372,7 @@ def train_loop(model, loader, critn, optim, epoch, device, task="regression"):
     model.train()
     loss_list = []
     pbar = tqdm(loader, total=len(loader))
-    for i, batch in enumerate(pbar):
+    for i, batch in enumerate(loader):
         batch = batch.to(device)
         optim.zero_grad()
         if task == "classification":
