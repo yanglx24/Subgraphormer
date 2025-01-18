@@ -47,7 +47,7 @@ if "Peptides" not in cfg.data.name:
     logging.info(
         f"Not using Pre-transform -- transforming dataset on the fly! Downloads the full dataset!"
     )
-    dataloader, num_elements_in_target = u_data.get_dataloader(cfg)
+    dataloader = u_data.get_dataloader(cfg)
 else:
     logging.info(
         f"Using Pre-transform - - creating datasets for each sampling rate! Downloading only {cfg.data.sampling.keep_subgraph_prob*100}%"
@@ -55,9 +55,7 @@ else:
     dataloaders = []
     for sample_idx in range(cfg.data.sampling.average_res_over):
         logging.info(f"got dataset {sample_idx}")
-        dataloader, num_elements_in_target = u_data.get_dataloader(
-            cfg, sample_idx=sample_idx
-        )
+        dataloader = u_data.get_dataloader(cfg, sample_idx=sample_idx)
         dataloaders.append(dataloader)
 
 
